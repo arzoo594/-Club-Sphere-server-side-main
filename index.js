@@ -22,6 +22,7 @@ async function run() {
     const membersCollection = db.collection("members");
     const clubManagerRequestsCollection = db.collection("clubManagerRequests");
     const clubRequestsCollection = db.collection("clubRequests");
+    const clubsCollection = db.collection("clubs");
 
     app.post("/club-requests", async (req, res) => {
       const clubData = req.body;
@@ -40,10 +41,86 @@ async function run() {
       res.send(result);
     });
 
-    app.get("club-requests", async (req, res) => {
+    app.get("/club-requests", async (req, res) => {
       const query = { status: "pending" };
       const result = await clubRequestsCollection.find(query).toArray();
       res.send(result);
+    });
+
+    // app.patch("/club-requests/approve/:id", async (req, res) => {
+    //   const clubRequest = await clubRequestsCollection.findOne({
+    //     _id: new ObjectId(id),
+    //   });
+
+    //   if (!clubRequest) {
+    //     return res.status(404).send({ message: "Request not found" });
+    //   }
+    //   const { _id, status, submittedAt, ...finalClubData } = clubRequest;
+
+    //   finalClubData.isPublished = true;
+    //   finalClubData.approvedAt = new Date();
+    //   const insertResult = await clubsCollection.insertOne(finalClubData);
+    //   const updateResult = await clubRequestsCollection.updateOne(
+    //     { _id: new ObjectId(id) },
+    //     {
+    //       $set: {
+    //         status: "approved",
+    //         publishedClubId: insertResult.insertedId,
+    //       },
+    //     }
+    //   );
+    //   if (updateResult.modifiedCount === 0 && updateResult.matchedCount > 0) {
+    //     console.warn(
+    //       `Club request ${id} was found but status update did not modify any document.`
+    //     );
+    //   }
+
+    //   res.send({ message: "Club Approved and Published Successfully!" });
+    // });
+    // ✅ Corrected Backend Route Logic
+
+    app.patch("/club-requests/approve/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const clubRequest = await clubRequestsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!clubRequest) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        const { _id, status, submittedAt, ...finalClubData } = clubRequest;
+
+        finalClubData.isPublished = true;
+        finalClubData.approvedAt = new Date();
+
+        const insertResult = await clubsCollection.insertOne(finalClubData);
+
+        const updateResult = await clubRequestsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status: "approved",
+              publishedClubId: insertResult.insertedId,
+            },
+          }
+        );
+
+        if (updateResult.modifiedCount === 0 && updateResult.matchedCount > 0) {
+          console.warn(
+            `Club request ${id} was found but status update did not modify any document.`
+          );
+        }
+
+        res.send({ message: "Club Approved and Published Successfully!" });
+      } catch (error) {
+        console.error("Error approving club:", error);
+        res
+          .status(500)
+          .send({ message: "An error occurred during approval process." });
+      }
     });
 
     app.get("/users/:email/role", async (req, res) => {
@@ -89,9 +166,7 @@ async function run() {
 
     // ✅ Admin: Get all club manager requests
     app.get("/club-manager-requests", async (req, res) => {
-      const result = await clubManagerRequestsCollection
-        .find({ createdAt: -1 })
-        .toArray();
+      const result = await clubManagerRequestsCollection.find().toArray();
       res.send(result);
     });
 
