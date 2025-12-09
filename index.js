@@ -89,7 +89,9 @@ async function run() {
 
     // ✅ Admin: Get all club manager requests
     app.get("/club-manager-requests", async (req, res) => {
-      const result = await clubManagerRequestsCollection.find().toArray();
+      const result = await clubManagerRequestsCollection
+        .find({ createdAt: -1 })
+        .toArray();
       res.send(result);
     });
 
