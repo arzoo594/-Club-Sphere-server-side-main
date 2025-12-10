@@ -47,38 +47,6 @@ async function run() {
       res.send(result);
     });
 
-    // app.patch("/club-requests/approve/:id", async (req, res) => {
-    //   const clubRequest = await clubRequestsCollection.findOne({
-    //     _id: new ObjectId(id),
-    //   });
-
-    //   if (!clubRequest) {
-    //     return res.status(404).send({ message: "Request not found" });
-    //   }
-    //   const { _id, status, submittedAt, ...finalClubData } = clubRequest;
-
-    //   finalClubData.isPublished = true;
-    //   finalClubData.approvedAt = new Date();
-    //   const insertResult = await clubsCollection.insertOne(finalClubData);
-    //   const updateResult = await clubRequestsCollection.updateOne(
-    //     { _id: new ObjectId(id) },
-    //     {
-    //       $set: {
-    //         status: "approved",
-    //         publishedClubId: insertResult.insertedId,
-    //       },
-    //     }
-    //   );
-    //   if (updateResult.modifiedCount === 0 && updateResult.matchedCount > 0) {
-    //     console.warn(
-    //       `Club request ${id} was found but status update did not modify any document.`
-    //     );
-    //   }
-
-    //   res.send({ message: "Club Approved and Published Successfully!" });
-    // });
-    // ✅ Corrected Backend Route Logic
-
     app.patch("/club-requests/approve/:id", async (req, res) => {
       const id = req.params.id;
 
@@ -120,6 +88,24 @@ async function run() {
         res
           .status(500)
           .send({ message: "An error occurred during approval process." });
+      }
+    });
+
+    app.get("/clubs", async (req, res) => {
+      const query = {};
+      const club = await clubsCollection.findOne(query);
+      res.send(club);
+    });
+
+    app.get("clubs/:id", async (req, res) => {
+      const id = req.params.id;
+      const clubId = new ObjectId(id);
+      const query = { _id: clubId };
+      const club = await clubsCollection.findOne(query);
+      if (club) {
+        res.send(club);
+      } else {
+        res.status(404).send({ message: "club not found" });
       }
     });
 
