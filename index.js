@@ -47,11 +47,31 @@ async function run() {
           clubId: paymentInfo.clubId,
         },
         mode: "payment",
-        success_url: `${process.env.SIDE_DOMAIN}payment-success`,
-        cancel_url: `${process.env.SIDE_DOMAIN}payment-cancelled`,
+
+        success_url: `${process.env.SIDE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SIDE_DOMAIN}/payment-cancelled`,
       });
       console.log(session);
       res.send({ url: session.url });
+    });
+
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log("session rettrive................", session);
+      if (session.payment_status === "paid") {
+        const id = session.metadata.clubId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            paymemtStatus: "paid",
+            clubRole: "club-member",
+          },
+        };
+        const result = await clubsCollection.updateOne(query, update);
+        res.send(result);
+      }
+      res.send({ success: false });
     });
 
     app.post("/club-requests", async (req, res) => {
