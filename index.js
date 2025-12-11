@@ -4,7 +4,7 @@ require("dotenv").config();
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
-
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 app.use(express.json());
 app.use(cors());
 const uri = `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@cluster0.9a0hyyx.mongodb.net/?appName=Cluster0`;
@@ -24,19 +24,64 @@ async function run() {
     const clubRequestsCollection = db.collection("clubRequests");
     const clubsCollection = db.collection("clubs");
 
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+
+      const amount = parseInt(paymentInfo.monthlyCharge) * 100;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "USD",
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo.clubName,
+              },
+            },
+
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.email,
+        metadata: {
+          clubId: paymentInfo.clubId,
+        },
+        mode: "payment",
+        success_url: `${process.env.SIDE_DOMAIN}payment-success`,
+        cancel_url: `${process.env.SIDE_DOMAIN}payment-cancelled`,
+      });
+      console.log(session);
+      res.send({ url: session.url });
+    });
+
     app.post("/club-requests", async (req, res) => {
       const clubData = req.body;
+
+      if (
+        clubData.monthlyCharge == undefined ||
+        isNaN(parseFloat(clubData.monthlyCharge))
+      ) {
+        return res.status(400).send({
+          message: "Monthly charge is required and must be a number.",
+        });
+      }
+
+      clubData.monthlyCharge = parseFloat(clubData.monthlyCharge);
+
       clubData.status = "pending";
       clubData.submittedAt = new Date();
+
       const existingPending = await clubRequestsCollection.findOne({
         managerEmail: clubData.email,
         status: "pending",
       });
+
       if (existingPending) {
         return res
-          .status(404)
-          .send({ message: "You already have a pending club" });
+          .status(400)
+          .send({ message: "You already have a pending club request." });
       }
+
       const result = await clubRequestsCollection.insertOne(clubData);
       res.send(result);
     });
@@ -92,9 +137,20 @@ async function run() {
     });
 
     app.get("/clubs", async (req, res) => {
-      const query = {};
+      const result = await clubsCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.get("/clubs/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
       const club = await clubsCollection.findOne(query);
-      res.send(club);
+
+      if (club) {
+        res.send(club);
+      } else {
+        res.status(404).send({ message: "club not found" });
+      }
     });
 
     app.get("clubs/:id", async (req, res) => {
