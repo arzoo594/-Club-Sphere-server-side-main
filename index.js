@@ -5,6 +5,16 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
+const crypto = require("crypto");
+
+function generateTrackingId() {
+  const prefix = "PRCL";
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase();
+
+  return `${prefix}-${date}-${random}`;
+}
+
 app.use(express.json());
 app.use(cors());
 const uri = `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@cluster0.9a0hyyx.mongodb.net/?appName=Cluster0`;
@@ -23,6 +33,7 @@ async function run() {
     const clubManagerRequestsCollection = db.collection("clubManagerRequests");
     const clubRequestsCollection = db.collection("clubRequests");
     const clubsCollection = db.collection("clubs");
+    const paymentCollection = db.collection("payments");
 
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
@@ -45,33 +56,91 @@ async function run() {
         customer_email: paymentInfo.email,
         metadata: {
           clubId: paymentInfo.clubId,
+          ClubName: paymentInfo.clubName,
+          managerEmail: paymentInfo.managerEmail,
         },
         mode: "payment",
 
         success_url: `${process.env.SIDE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SIDE_DOMAIN}/payment-cancelled`,
       });
-      console.log(session);
+
       res.send({ url: session.url });
     });
 
     app.patch("/payment-success", async (req, res) => {
       const sessionId = req.query.session_id;
+      console.log("session id", sessionId);
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      console.log("session rettrive................", session);
+      const trackingId = generateTrackingId();
+
+      const transactionId = session.payment_intent;
+      const query = { transactionId: transactionId };
+      const paymentExist = await paymentCollection.findOne(query);
+      if (paymentExist) {
+        return res.send({ message: "already exists", transactionId });
+      }
+
       if (session.payment_status === "paid") {
         const id = session.metadata.clubId;
         const query = { _id: new ObjectId(id) };
         const update = {
           $set: {
-            paymemtStatus: "paid",
-            clubRole: "club-member",
+            // clubRole: "club-member",
+            // paymentStatus: "paid",
+            // trackingId: trackingId,
           },
         };
         const result = await clubsCollection.updateOne(query, update);
-        res.send(result);
+        console.log(result);
       }
-      res.send({ success: false });
+
+      const payment = {
+        amount: session.amount_total / 100,
+        currency: session.currency,
+        customerEmail: session.customer_email,
+        clubId: session.metadata.clubId,
+        clubName: session.metadata.clubName,
+        transactionId: session.payment_intent,
+        paymemtStatus: session.payment_status,
+
+        trackingId: trackingId,
+        paidAt: new Date(),
+        managerEmail: session.metadata.managerEmail,
+      };
+      if (session.payment_status === "paid") {
+        const resultPayment = await paymentCollection.insertOne(payment);
+
+        res.send({
+          success: true,
+          modifyParcel: result,
+          trackingId: trackingId,
+          paymentInfo: resultPayment,
+          transactionId: session.payment_intent,
+        });
+      }
+
+      res.send({ success: true });
+    });
+
+    app.get("/payments/status", async (req, res) => {
+      const { email, clubId } = req.query;
+
+      const payment = await paymentCollection.findOne({
+        customerEmail: email,
+        clubId: clubId.toString(),
+        paymemtStatus: "paid",
+      });
+
+      if (payment) {
+        return res.send({
+          joined: true,
+          transactionId: payment.transactionId,
+          trackingId: payment.trackingId,
+        });
+      }
+
+      res.send({ joined: false });
     });
 
     app.post("/club-requests", async (req, res) => {
@@ -104,6 +173,25 @@ async function run() {
 
       const result = await clubRequestsCollection.insertOne(clubData);
       res.send(result);
+    });
+
+    app.get("/club-members", async (req, res) => {
+      const managerEmail = req.query.email;
+
+      const clubs = await clubsCollection
+        .find({ email: managerEmail })
+        .toArray();
+
+      const clubIds = clubs.map((c) => c._id.toString());
+
+      const members = await paymentCollection
+        .find({
+          clubId: { $in: clubIds },
+          paymemtStatus: "paid",
+        })
+        .toArray();
+
+      res.send(members);
     });
 
     app.get("/club-requests", async (req, res) => {
