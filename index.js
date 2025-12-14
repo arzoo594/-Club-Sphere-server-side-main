@@ -34,7 +34,8 @@ async function run() {
     const clubRequestsCollection = db.collection("clubRequests");
     const clubsCollection = db.collection("clubs");
     const paymentCollection = db.collection("payments");
-
+    const eventsCollection = db.collection("events");
+    const eventRegistrationsCollection = db.collection("eventResgistrations");
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
 
@@ -66,6 +67,57 @@ async function run() {
       });
 
       res.send({ url: session.url });
+    });
+
+    // event related api
+
+    app.post("/events", async (req, res) => {
+      const { clubId, title, description, eventDate, location, maxAttendees } =
+        req.body;
+      if (!clubId || !title || !eventDate || !location) {
+        return res.status(400).send({ message: "Required fields missing" });
+      }
+
+      const event = {
+        clubId: new ObjectId(clubId),
+        title,
+        description,
+        eventDate: new Date(eventDate),
+        location,
+        maxAttendees: maxAttendees || null,
+        status: "published",
+        createdBy: req.user.email,
+        createdAt: new Date(),
+      };
+      const result = await eventsCollection.insertOne(event);
+      res.send(result);
+    });
+
+    app.post("event-registration", async (req, res) => {
+      const { eventId, userEmail } = req.body;
+      const event = await eventsCollection.findOne({
+        _id: new ObjectId(eventId),
+        status: "published",
+      });
+      if (!event) return res.status(404).send({ message: "Event not found" });
+
+      const clubMember = await paymentCollection.findOne({
+        userEmail,
+        clubId: event.clubId,
+        status: "active",
+      });
+      if (!clubMember) {
+        return res.status(403).send({ message: "you must join the lub first" });
+      }
+      const registration = {
+        eventId,
+        userEmail,
+        clubId: event.clubId,
+        status: "registered",
+        registeredAt: new Date(),
+      };
+      const result = await eventRegistrationsCollection.insertOne(registration);
+      res.send(result);
     });
 
     app.patch("/payment-success", async (req, res) => {
