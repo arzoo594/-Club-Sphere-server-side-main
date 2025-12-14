@@ -112,7 +112,18 @@ async function run() {
       }
     });
 
-    app.post("event-registration", async (req, res) => {
+    // GET all events
+    app.get("/events", async (req, res) => {
+      try {
+        const events = await eventsCollection.find().toArray();
+        res.send(events);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch events" });
+      }
+    });
+
+    app.post("/event-registration", async (req, res) => {
       const { eventId, userEmail } = req.body;
       const event = await eventsCollection.findOne({
         _id: new ObjectId(eventId),
@@ -121,12 +132,12 @@ async function run() {
       if (!event) return res.status(404).send({ message: "Event not found" });
 
       const clubMember = await paymentCollection.findOne({
-        userEmail,
-        clubId: event.clubId,
-        status: "active",
+        customerEmail: userEmail,
       });
       if (!clubMember) {
-        return res.status(403).send({ message: "you must join the lub first" });
+        return res
+          .status(403)
+          .send({ message: "you must join the Club first" });
       }
       const registration = {
         eventId,
