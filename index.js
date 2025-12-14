@@ -123,24 +123,16 @@ async function run() {
       res.send({ success: true });
     });
 
-    app.get("/payments/status", async (req, res) => {
-      const { email, clubId } = req.query;
+    // customer get api
 
-      const payment = await paymentCollection.findOne({
-        customerEmail: email,
-        clubId: clubId.toString(),
-        paymemtStatus: "paid",
-      });
+    app.get("/customer-email/:email", async (req, res) => {
+      const email = req.params.email;
 
-      if (payment) {
-        return res.send({
-          joined: true,
-          transactionId: payment.transactionId,
-          trackingId: payment.trackingId,
-        });
-      }
+      const myClub = await paymentCollection
+        .find({ customerEmail: email })
+        .toArray();
 
-      res.send({ joined: false });
+      res.send(myClub);
     });
 
     app.post("/club-requests", async (req, res) => {
