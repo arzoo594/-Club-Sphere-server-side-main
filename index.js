@@ -72,25 +72,44 @@ async function run() {
     // event related api
 
     app.post("/events", async (req, res) => {
-      const { clubId, title, description, eventDate, location, maxAttendees } =
-        req.body;
-      if (!clubId || !title || !eventDate || !location) {
-        return res.status(400).send({ message: "Required fields missing" });
-      }
+      try {
+        const {
+          clubId,
+          clubName,
 
-      const event = {
-        clubId: new ObjectId(clubId),
-        title,
-        description,
-        eventDate: new Date(eventDate),
-        location,
-        maxAttendees: maxAttendees || null,
-        status: "published",
-        createdBy: req.user.email,
-        createdAt: new Date(),
-      };
-      const result = await eventsCollection.insertOne(event);
-      res.send(result);
+          title,
+          description,
+          eventDate,
+          location,
+          maxAttendees,
+          imageUrl,
+          createdBy,
+        } = req.body;
+
+        if (!clubId || !title || !eventDate || !location || !createdBy) {
+          return res.status(400).send({ message: "Required fields missing" });
+        }
+
+        const event = {
+          clubId: new ObjectId(clubId),
+          title,
+          description: description || "",
+          eventDate: new Date(eventDate),
+          location,
+          clubName: clubName || "",
+          maxAttendees: maxAttendees || null,
+          imageUrl: imageUrl || null,
+          status: "published",
+          createdBy,
+          createdAt: new Date(),
+        };
+
+        const result = await eventsCollection.insertOne(event);
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
     });
 
     app.post("event-registration", async (req, res) => {
