@@ -134,6 +134,13 @@ async function run() {
 
       res.send(myClub);
     });
+    app.get("/email/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const myClub = await clubsCollection.find({ email: email }).toArray();
+
+      res.send(myClub);
+    });
 
     app.post("/club-requests", async (req, res) => {
       const clubData = req.body;
