@@ -243,6 +243,11 @@ async function run() {
 
       res.send(myClub);
     });
+    app.get("/club-memberss", async (req, res) => {
+      const clubMembers = await paymentCollection.find().toArray();
+
+      res.send(clubMembers);
+    });
 
     app.post("/club-requests", async (req, res) => {
       const clubData = req.body;
