@@ -139,6 +139,17 @@ async function run() {
           .status(403)
           .send({ message: "you must join the Club first" });
       }
+
+      const alreadyRegistered = await eventRegistrationsCollection.findOne({
+        eventId,
+        userEmail,
+      });
+      if (alreadyRegistered) {
+        return res
+          .status(409)
+          .send({ message: "You are already registered for this event" });
+      }
+
       const registration = {
         eventId,
         userEmail,
