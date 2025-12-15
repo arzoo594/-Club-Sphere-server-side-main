@@ -1,2 +1,11 @@
+
+
+
+# Node modules
 node_modules/
+
+# Environment variables
 .env
+
+# Firebase Admin SDK service account
+club-sphere-auth-firebase-adminsdk-*.json

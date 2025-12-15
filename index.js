@@ -7,6 +7,14 @@ const port = process.env.PORT || 3000;
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const crypto = require("crypto");
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./club-sphere-auth-firebase-adminsdk-.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 function generateTrackingId() {
   const prefix = "PRCL";
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -17,6 +25,25 @@ function generateTrackingId() {
 
 app.use(express.json());
 app.use(cors());
+
+const verifyFbToken = async (req, res, next) => {
+  console.log("header in the middleWare", req.headers.authorization);
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unauthorizes access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log("decoded in the token ", decoded);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "unauthorizes access" });
+  }
+};
+
 const uri = `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@cluster0.9a0hyyx.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -123,7 +150,7 @@ async function run() {
       }
     });
 
-    app.post("/event-registration", async (req, res) => {
+    app.post("/event-registration", verifyFbToken, async (req, res) => {
       const { eventId, userEmail } = req.body;
       const event = await eventsCollection.findOne({
         _id: new ObjectId(eventId),
@@ -161,7 +188,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/payment-success", async (req, res) => {
+    app.patch("/payment-success", verifyFbToken, async (req, res) => {
       const sessionId = req.query.session_id;
       console.log("session id", sessionId);
       const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -218,7 +245,7 @@ async function run() {
 
     // customer get api
 
-    app.get("/customer-email/:email", async (req, res) => {
+    app.get("/customer-email/:email", verifyFbToken, async (req, res) => {
       const email = req.params.email;
 
       const myClub = await paymentCollection
@@ -227,7 +254,7 @@ async function run() {
 
       res.send(myClub);
     });
-    app.get("/event-register-email/:email", async (req, res) => {
+    app.get("/event-register-email/:email", verifyFbToken, async (req, res) => {
       const email = req.params.email;
 
       const myClub = await eventRegistrationsCollection
@@ -236,7 +263,7 @@ async function run() {
 
       res.send(myClub);
     });
-    app.get("/email/:email", async (req, res) => {
+    app.get("/email/:email", verifyFbToken, async (req, res) => {
       const email = req.params.email;
 
       const myClub = await clubsCollection.find({ email: email }).toArray();
@@ -389,7 +416,7 @@ async function run() {
       }
     });
 
-    app.get("/users/:email/role", async (req, res) => {
+    app.get("/users/:email/role", verifyFbToken, async (req, res) => {
       const email = req.params.email;
 
       const user = await membersCollection.findOne({ email: email });
@@ -413,7 +440,7 @@ async function run() {
 
     // club manager post request api
 
-    app.post("/club-manager-request", async (req, res) => {
+    app.post("/club-manager-request", verifyFbToken, async (req, res) => {
       const requestData = req.body;
       requestData.status = "pending";
       requestData.createdAt = new Date();
@@ -462,6 +489,8 @@ async function run() {
         res.status(500).send({ error: "Something went wrong" });
       }
     });
+    // chart related api
+
     await client.connect();
 
     await client.db("admin").command({ ping: 1 });
