@@ -248,6 +248,11 @@ async function run() {
 
       res.send(allClubs);
     });
+    app.get("/club-eventss", async (req, res) => {
+      const allEvents = await eventsCollection.find().toArray();
+
+      res.send(allEvents);
+    });
     app.get("/all-clubss", async (req, res) => {
       const clubMembers = await paymentCollection.find().toArray();
 
