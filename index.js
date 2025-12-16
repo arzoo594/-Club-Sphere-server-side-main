@@ -491,6 +491,124 @@ async function run() {
     });
     // chart related api
 
+    app.get("/total-revenue", async (req, res) => {
+      try {
+        const totalRevenueResult = await paymentCollection
+          .aggregate([
+            {
+              $match: {
+                paymemtStatus: "paid",
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalRevenue: { $sum: "$amount" },
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                totalRevenue: 1,
+              },
+            },
+          ])
+          .toArray();
+
+        const totalRevenue =
+          totalRevenueResult.length > 0
+            ? totalRevenueResult[0].totalRevenue
+            : 0;
+
+        res.send({
+          success: true,
+          totalRevenue: totalRevenue,
+          message: "Total revenue fetched successfully.",
+        });
+      } catch (error) {
+        console.error("Error fetching total revenue:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch total revenue.",
+          error: error.message,
+        });
+      }
+    });
+
+    app.get("/admin-stats", async (req, res) => {
+      if (!paymentCollection || !membersCollection) {
+        return res
+          .status(503)
+          .send({ message: "Database collections not initialized." });
+      }
+
+      try {
+        const revenueResult = await paymentCollection
+          .aggregate([
+            { $match: { paymemtStatus: "paid" } },
+            { $group: { _id: null, totalRevenue: { $sum: "$amount" } } },
+          ])
+          .toArray();
+
+        const totalRevenue =
+          revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
+
+        const clubRevenueData = await paymentCollection
+          .aggregate([
+            { $match: { paymemtStatus: "paid" } },
+            {
+              $group: {
+                _id: { $ifNull: ["$clubName", "Unassigned Club"] },
+                totalRevenue: { $sum: "$amount" },
+              },
+            },
+            { $project: { _id: 0, clubName: "$_id", total: "$totalRevenue" } },
+          ])
+          .toArray();
+
+        const clubMemberData = await membersCollection
+          .aggregate([
+            { $match: { clubName: { $exists: true, $ne: null } } },
+            {
+              $group: {
+                _id: "$clubName",
+                totalMembers: { $sum: 1 },
+              },
+            },
+            {
+              $project: { _id: 0, clubName: "$_id", members: "$totalMembers" },
+            },
+          ])
+          .toArray();
+
+        const totalMembers = await membersCollection.estimatedDocumentCount();
+
+        const finalChartData = clubRevenueData.map((revenueItem) => {
+          const matchingMemberData = clubMemberData.find(
+            (memberItem) => memberItem.clubName === revenueItem.clubName
+          );
+          return {
+            ...revenueItem,
+            members: matchingMemberData ? matchingMemberData.members : 0,
+          };
+        });
+
+        res.send({
+          success: true,
+          totalRevenue: totalRevenue,
+          totalMembers: totalMembers,
+          clubRevenueData: finalChartData,
+          message: "All admin statistics fetched successfully in one go.",
+        });
+      } catch (error) {
+        console.error("Error fetching admin stats:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch admin statistics.",
+          error: error.message,
+        });
+      }
+    });
     await client.connect();
 
     await client.db("admin").command({ ping: 1 });
