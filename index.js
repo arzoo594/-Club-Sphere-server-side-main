@@ -9,7 +9,12 @@ const crypto = require("crypto");
 
 const admin = require("firebase-admin");
 
-const serviceAccount = require("./club-sphere-auth-firebase-adminsdk-.json");
+// const serviceAccount = require("./firebase-admin-key.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -55,6 +60,7 @@ const client = new MongoClient(uri, {
 });
 async function run() {
   try {
+    await client.connect();
     const db = client.db("ClubsSphere");
     const membersCollection = db.collection("members");
     const clubManagerRequestsCollection = db.collection("clubManagerRequests");
@@ -386,6 +392,33 @@ async function run() {
           .send({ message: "An error occurred during approval process." });
       }
     });
+    reject;
+    app.patch("/club-manager-request/reject/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            status: "rejected",
+            rejectedAt: new Date(),
+          },
+        };
+
+        const result = await clubRequestsCollection.updateOne(
+          filter,
+          updateDoc
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        res.send({ message: "This request has been rejected." });
+      } catch (error) {
+        console.error("Error rejecting request:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
 
     app.get("/clubs", async (req, res) => {
       const result = await clubsCollection.find().toArray();
@@ -534,6 +567,44 @@ async function run() {
         });
       }
     });
+    // Make Admin API
+    app.patch("/club-manager-request/make-admin/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        // 1. খুঁজে বের কর Approved Request
+        const managerRequest = await clubManagerRequestsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!managerRequest) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        if (managerRequest.status !== "approved") {
+          return res.status(400).send({
+            message: "Only approved managers can be promoted to Admin.",
+          });
+        }
+
+        // 2. Member Collection এ Role Update
+        const updateResult = await membersCollection.updateOne(
+          { email: managerRequest.email },
+          { $set: { role: "admin" } }
+        );
+
+        if (updateResult.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ message: "Member not found to promote as admin." });
+        }
+
+        res.send({ message: "Manager has been promoted to Admin ✅" });
+      } catch (err) {
+        console.error("Error promoting manager to admin:", err);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
 
     app.get("/admin-stats", async (req, res) => {
       if (!paymentCollection || !membersCollection) {
@@ -609,12 +680,12 @@ async function run() {
         });
       }
     });
-    await client.connect();
+    // await client.connect();
 
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
   }
 }
