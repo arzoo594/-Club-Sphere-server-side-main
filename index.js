@@ -60,7 +60,7 @@ const client = new MongoClient(uri, {
 });
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("ClubsSphere");
     const membersCollection = db.collection("members");
     const clubManagerRequestsCollection = db.collection("clubManagerRequests");
@@ -392,9 +392,37 @@ async function run() {
           .send({ message: "An error occurred during approval process." });
       }
     });
-    reject;
+    // reject;
+    // app.patch("/club-manager-request/reject/:id", async (req, res) => {
+    //   const id = req.params.id;
+    //   try {
+    //     const filter = { _id: new ObjectId(id) };
+    //     const updateDoc = {
+    //       $set: {
+    //         status: "rejected",
+    //         rejectedAt: new Date(),
+    //       },
+    //     };
+
+    //     const result = await clubRequestsCollection.updateOne(
+    //       filter,
+    //       updateDoc
+    //     );
+
+    //     if (result.matchedCount === 0) {
+    //       return res.status(404).send({ message: "Request not found" });
+    //     }
+
+    //     res.send({ message: "This request has been rejected." });
+    //   } catch (error) {
+    //     console.error("Error rejecting request:", error);
+    //     res.status(500).send({ message: "Internal server error" });
+    //   }
+    // });
+
     app.patch("/club-manager-request/reject/:id", async (req, res) => {
       const id = req.params.id;
+
       try {
         const filter = { _id: new ObjectId(id) };
         const updateDoc = {
@@ -404,7 +432,7 @@ async function run() {
           },
         };
 
-        const result = await clubRequestsCollection.updateOne(
+        const result = await clubManagerRequestsCollection.updateOne(
           filter,
           updateDoc
         );
@@ -567,12 +595,11 @@ async function run() {
         });
       }
     });
-    // Make Admin API
+
     app.patch("/club-manager-request/make-admin/:id", async (req, res) => {
       const id = req.params.id;
 
       try {
-        // 1. খুঁজে বের কর Approved Request
         const managerRequest = await clubManagerRequestsCollection.findOne({
           _id: new ObjectId(id),
         });
@@ -587,7 +614,6 @@ async function run() {
           });
         }
 
-        // 2. Member Collection এ Role Update
         const updateResult = await membersCollection.updateOne(
           { email: managerRequest.email },
           { $set: { role: "admin" } }
