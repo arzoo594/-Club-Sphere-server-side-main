@@ -276,6 +276,21 @@ async function run() {
 
       res.send(myClub);
     });
+
+    app.get("/my-events/:email", verifyFbToken, async (req, res) => {
+      const email = req.params.email;
+
+      try {
+        const myEvents = await eventsCollection
+          .find({ createdBy: email })
+          .toArray();
+        res.send(myEvents);
+      } catch (err) {
+        console.error("Error fetching events:", err);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+
     app.get("/club-memberss", async (req, res) => {
       const allClubs = await clubsCollection.find().toArray();
 
@@ -392,33 +407,45 @@ async function run() {
           .send({ message: "An error occurred during approval process." });
       }
     });
+
+    app.patch("/club-requests/reject/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const clubRequest = await clubRequestsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!clubRequest) {
+          return res.status(404).send({ message: "Request not found" });
+        }
+
+        const updateResult = await clubRequestsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status: "rejected",
+              rejectedAt: new Date(),
+            },
+          }
+        );
+
+        if (updateResult.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ message: "Club request not found to reject." });
+        }
+
+        res.send({ message: "Club request has been rejected successfully." });
+      } catch (error) {
+        console.error("Error rejecting club request:", error);
+        res
+          .status(500)
+          .send({ message: "An error occurred during rejection process." });
+      }
+    });
+
     // reject;
-    // app.patch("/club-manager-request/reject/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   try {
-    //     const filter = { _id: new ObjectId(id) };
-    //     const updateDoc = {
-    //       $set: {
-    //         status: "rejected",
-    //         rejectedAt: new Date(),
-    //       },
-    //     };
-
-    //     const result = await clubRequestsCollection.updateOne(
-    //       filter,
-    //       updateDoc
-    //     );
-
-    //     if (result.matchedCount === 0) {
-    //       return res.status(404).send({ message: "Request not found" });
-    //     }
-
-    //     res.send({ message: "This request has been rejected." });
-    //   } catch (error) {
-    //     console.error("Error rejecting request:", error);
-    //     res.status(500).send({ message: "Internal server error" });
-    //   }
-    // });
 
     app.patch("/club-manager-request/reject/:id", async (req, res) => {
       const id = req.params.id;
@@ -477,6 +504,52 @@ async function run() {
       }
     });
 
+    // update and delete api
+
+    // Update club by id
+    app.patch("/clubs/:id", async (req, res) => {
+      const id = req.params.id;
+      const updates = req.body;
+
+      try {
+        const club = await clubsCollection.findOne({ _id: new ObjectId(id) });
+        if (!club) return res.status(404).send({ message: "Club not found" });
+
+        if (club.managerEmail !== req.decoded_email) {
+          return res.status(403).send({ message: "Unauthorized" });
+        }
+
+        const result = await clubsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updates }
+        );
+
+        res.send({ message: "Club updated successfully", result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    app.delete("/clubs/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const club = await clubsCollection.findOne({ _id: new ObjectId(id) });
+        if (!club) return res.status(404).send({ message: "Club not found" });
+
+        if (club.managerEmail !== req.decoded_email) {
+          return res.status(403).send({ message: "Unauthorized" });
+        }
+
+        await clubsCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send({ message: "Club deleted successfully" });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
     app.get("/users/:email/role", verifyFbToken, async (req, res) => {
       const email = req.params.email;
 
@@ -527,18 +600,15 @@ async function run() {
     app.patch("/club-manager-request/approve/:id", async (req, res) => {
       const id = req.params.id;
       try {
-        // 1. Update status
         const requestUpdate = await clubManagerRequestsCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: { status: "approved" } }
         );
 
-        // 2. Get approved request
         const approvedRequest = await clubManagerRequestsCollection.findOne({
           _id: new ObjectId(id),
         });
 
-        // 3. Update member role
         await membersCollection.updateOne(
           { email: approvedRequest.email },
           { $set: { role: "manager" } }
@@ -600,6 +670,7 @@ async function run() {
       const id = req.params.id;
 
       try {
+        // 1️⃣ Find manager request
         const managerRequest = await clubManagerRequestsCollection.findOne({
           _id: new ObjectId(id),
         });
@@ -614,18 +685,33 @@ async function run() {
           });
         }
 
-        const updateResult = await membersCollection.updateOne(
+        // 2️⃣ Find member
+        const member = await membersCollection.findOne({
+          email: managerRequest.email,
+        });
+
+        if (!member) {
+          return res.status(404).send({
+            message: "Member not found.",
+          });
+        }
+
+        // 3️⃣ 🔐 Already admin check
+        if (member.role === "admin") {
+          return res.status(409).send({
+            message: "This user is already an Admin.",
+          });
+        }
+
+        // 4️⃣ Update role
+        await membersCollection.updateOne(
           { email: managerRequest.email },
           { $set: { role: "admin" } }
         );
 
-        if (updateResult.matchedCount === 0) {
-          return res
-            .status(404)
-            .send({ message: "Member not found to promote as admin." });
-        }
-
-        res.send({ message: "Manager has been promoted to Admin ✅" });
+        res.send({
+          message: "Manager has been promoted to Admin ✅",
+        });
       } catch (err) {
         console.error("Error promoting manager to admin:", err);
         res.status(500).send({ message: "Internal server error" });
